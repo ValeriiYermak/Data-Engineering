@@ -1,0 +1,28 @@
+# Образ OpenJDK 11 для Spark
+FROM eclipse-temurin:11-jdk
+
+# Встановлюємо Python 3 та пакети для збірки
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-venv \
+    python3-pip \
+    python3-dev \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Створюємо віртуальне середовище
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Оновлюємо pip і встановлюємо Python-залежності
+RUN python -m pip install --upgrade pip
+RUN pip install --no-cache-dir kafka-python pandas pyspark==3.3.4
+
+# Копіюємо скрипт алертів та CSV з умовами
+COPY sensor_alerts.py .
+COPY alerts_conditions.csv .
+
+# Запуск Spark скрипта
+CMD ["spark-submit", "--packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.4", "sensor_alerts.py"]
