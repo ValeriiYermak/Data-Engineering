@@ -1,0 +1,86 @@
+version: '3.7'
+
+services:
+  mysql:
+    image: mysql:8
+    container_name: mysql
+    environment:
+      # Облікові дані для бази даних Airflow та користувача root
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: airflow
+      MYSQL_USER: airflow
+      MYSQL_PASSWORD: airflow
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: always
+
+  airflow_webserver:
+    image: apache/airflow:2.9.1
+    container_name: airflow_webserver
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__EXECUTOR: "LocalExecutor"
+      # ВИПРАВЛЕНО: Коректний діалект: mysql+mysqldb
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: mysql+mysqldb://airflow:airflow@mysql:3306/airflow
+      AIRFLOW__WEBSERVER__SECRET_KEY: "super_secure_airflow_key_2025_42"
+      # ВИПРАВЛЕНО ЛОГИ: Вказує повний протокол для коректного відображення логів
+      AIRFLOW__WEBSERVER__BASE_URL: http://localhost:8080
+      # СТАБІЛЬНА ІНСТАЛЯЦІЯ: Встановлює провайдери MySQL
+      _PIP_ADDITIONAL_REQUIREMENTS: "apache-airflow-providers-mysql apache-airflow[mysql]"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./scripts:/opt/airflow/scripts
+      - airflow_data:/opt/airflow
+    ports:
+      - "8080:8080"
+    entrypoint: /bin/bash
+    command: >
+      -c "/opt/airflow/scripts/wait-for-it.sh mysql:3306 --timeout=60 --strict -- 
+          # 1. Ініціалізація бази даних Airflow
+          airflow db init &&
+          # 2. Створення користувача адміна (ВИПРАВЛЕНО: ідемпотентність через || true)
+          airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com --password admin || true &&
+          # 3. Запуск вебсервера
+          airflow webserver"
+    restart: always
+
+  airflow_scheduler:
+    image: apache/airflow:2.9.1
+    container_name: airflow_scheduler
+    depends_on:
+      mysql:
+        condition: service_healthy
+      airflow_webserver:
+        condition: service_started
+    environment:
+      AIRFLOW__CORE__EXECUTOR: "LocalExecutor"
+      # ВИПРАВЛЕНО: Коректний діалект: mysql+mysqldb
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: mysql+mysqldb://airflow:airflow@mysql:3306/airflow
+      AIRFLOW__WEBSERVER__SECRET_KEY: "super_secure_airflow_key_2025_42"
+      # СТАБІЛЬНА ІНСТАЛЯЦІЯ
+      _PIP_ADDITIONAL_REQUIREMENTS: "apache-airflow-providers-mysql apache-airflow[mysql]"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./scripts:/opt/airflow/scripts
+      - airflow_data:/opt/airflow
+    entrypoint: /bin/bash
+    command: >
+      -c "/opt/airflow/scripts/wait-for-it.sh mysql:3306 --timeout=60 --strict -- 
+          # Запуск планувальника
+          airflow scheduler"
+    restart: always
+
+volumes:
+  mysql_data:
+  airflow_data:

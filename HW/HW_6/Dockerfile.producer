@@ -1,0 +1,13 @@
+# Образ з Python 3.9
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Встановлюємо залежність для Kafka
+RUN pip install --no-cache-dir kafka-python
+
+# Копіюємо скрипт продюсера
+COPY sensor_producer.py .
+
+# Запуск продюсера
+CMD ["python", "sensor_producer.py"]
