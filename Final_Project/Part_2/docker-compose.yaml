@@ -1,0 +1,95 @@
+services:
+  mysql:
+    image: mysql:8
+    container_name: mysql_final_project
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: airflow
+      MYSQL_USER: airflow
+      MYSQL_PASSWORD: airflow
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    restart: always
+
+  airflow_webserver:
+    build: .
+    container_name: airflow_webserver_final_project
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__EXECUTOR: "LocalExecutor"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: mysql+mysqldb://airflow:airflow@mysql:3306/airflow
+      AIRFLOW__WEBSERVER__SECRET_KEY: "super_secure_airflow_key_2025_42"
+      AIRFLOW__WEBSERVER__BASE_URL: http://localhost:8080
+      AIRFLOW_CONN_SPARK_DEFAULT: '{"conn_type": "spark", "host": "local"}'
+
+      # Java environment variables
+      JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+      PYSPARK_PYTHON: python3
+      PYSPARK_DRIVER_PYTHON: python3
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./data:/opt/airflow/data
+      - airflow_data:/opt/airflow
+    ports:
+      - "8080:8080"
+    command: >
+      bash -c "
+        echo 'Checking Java installation...' &&
+        java -version &&
+        echo 'Waiting for MySQL to be ready...' &&
+        sleep 45 &&
+        echo 'Initializing Airflow database...' &&
+        airflow db init &&
+        echo 'Creating admin user...' &&
+        airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com || true &&
+        echo 'Starting Airflow webserver...' &&
+        airflow webserver
+      "
+    restart: always
+
+  airflow_scheduler:
+    build: .
+    container_name: airflow_scheduler_final_project
+    depends_on:
+      mysql:
+        condition: service_healthy
+      airflow_webserver:
+        condition: service_started
+    environment:
+      AIRFLOW__CORE__EXECUTOR: "LocalExecutor"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: mysql+mysqldb://airflow:airflow@mysql:3306/airflow
+      AIRFLOW__WEBSERVER__SECRET_KEY: "super_secure_airflow_key_2025_42"
+      AIRFLOW_CONN_SPARK_DEFAULT: '{"conn_type": "spark", "host": "local"}'
+
+      # Java environment variables
+      JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+      PYSPARK_PYTHON: python3
+      PYSPARK_DRIVER_PYTHON: python3
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./data:/opt/airflow/data
+      - airflow_data:/opt/airflow
+    command: >
+      bash -c "
+        echo 'Checking Java installation...' &&
+        java -version &&
+        echo 'Waiting for services to be ready...' &&
+        sleep 60 &&
+        echo 'Starting Airflow scheduler...' &&
+        airflow scheduler
+      "
+    restart: always
+
+volumes:
+  mysql_data:
+  airflow_data:
